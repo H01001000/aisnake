@@ -18,10 +18,11 @@ WIN = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 pygame.display.set_caption("Snake")
 
 gen = 0
+best  = 0
 
 clock = pygame.time.Clock()
 
-timefactor = 1000
+timefactor = 1
 snake_block = 10
 snake_speed = 10*timefactor
 
@@ -35,6 +36,9 @@ class Snake:
         self.fy = randomx(self.sy)
         self.snake_length = 1
         self.snake_list = [[self.sx,self.sy]]
+        self.direction = ""
+        self.lastdirection = ""
+        self.directioninno = 0
 
     def move(self):
         self.sx += self.schangex
@@ -44,18 +48,24 @@ class Snake:
             del self.snake_list[0]
 
     def change_direction(self, direction):
+        self.lastdirection = self.direction
+        self.direction = direction
         if direction == "left":
             self.schangex = -10
             self.schangey = 0
+            self.directioninno = 0
         elif direction == "right":
             self.schangex = 10
             self.schangey = 0
+            self.directioninno = 1
         elif direction == "up":
             self.schangey = -10
             self.schangex = 0
+            self.directioninno = 3
         elif direction == "down":
             self.schangey = 10
             self.schangex = 0
+            self.directioninno = 4
 
 def randomx(sx):
     x = round(random.randrange(0, WIN_WIDTH - snake_block) / 10.0) * 10.0
@@ -101,19 +111,30 @@ def snakeout(snake):
     #img.show()
     return screen
 
-def draw_window(win, snakes):
+def lastfive(printstr, snakes):
+    if len(snakes) < 5:
+        print(printstr, end =" ")
+
+def draw_window(win, snakes, best, timefactor):
     win.fill((0,0,0))
     for Snake in snakes:
         pygame.draw.rect(WIN, (255, 255, 255),[Snake.fx,Snake.fy,snake_block,snake_block])
         for x in range(len(Snake.snake_list)):
             pygame.draw.rect(WIN, (128, 128, 128),[Snake.snake_list[x][0],Snake.snake_list[x][1],snake_block,snake_block])
+
+    value = STAT_FONT.render("Best Score: " + str(best), True, (255, 255, 255))
+    WIN.blit(value, [0, 0])
+
+    value = STAT_FONT.render("timefactor: " + str(timefactor), True, (255, 255, 255))
+    WIN.blit(value, [0, 30])
+
     pygame.display.update()
 
 def eval_genomes(genomes, config):
     
-    should_length = 2
+    should_length = 1
 
-    global WIN, gen
+    global WIN, gen, best, timefactor
     win = WIN
     gen += 1
 
@@ -128,8 +149,6 @@ def eval_genomes(genomes, config):
         snakes.append(Snake(round(random.randrange(0, WIN_WIDTH - snake_block) / 10.0) * 10.0,round(random.randrange(0, WIN_HEIGHT - snake_block) / 10.0) * 10.0))
         ge.append(genome)
 
-
-    gen_time = pygame.time.get_ticks()
     start_time = pygame.time.get_ticks()
     run = True
     while run:
@@ -141,19 +160,26 @@ def eval_genomes(genomes, config):
                 pygame.quit()
                 quit()
                 break
-        
-        for x, snake in enumerate(snakes):
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_i and timefactor != 1:
+                    timefactor = timefactor//10
+                elif event.key == pygame.K_p:
+                    timefactor = timefactor*10
+
+        for snake in snakes:
             snake.move()
             if snake.sx >= WIN_WIDTH or snake.sx < 0 or snake.sy >= WIN_HEIGHT or snake.sy < 0:
-                ge[x].fitness -= 1
-                snakes.pop(x)
-                nets.pop(x)
-                ge.pop(x)
+                ge[snakes.index(snake)].fitness -= 1
+                nets.pop(snakes.index(snake))
+                ge.pop(snakes.index(snake))
+                snakes.pop(snakes.index(snake))
+                lastfive("hit wall", snakes)
         
-        for x, snake in enumerate(snakes):
-            ge[x].fitness -= 0.001
+        for snake in snakes:
+            ge[snakes.index(snake)].fitness += 0.001
 
-            output = nets[int(x)].activate([snake.sx, WIN_WIDTH-snake.sx, snake.sy, WIN_HEIGHT-snake.sy, abs(snake.fx-snake.sx), abs(snake.fy-snake.sy)])
+            output = nets[snakes.index(snake)].activate([snake.sx, WIN_WIDTH-snake.sx, snake.sy, WIN_HEIGHT-snake.sy, snake.fx-snake.sx, snake.fy-snake.sy, snake.directioninno])
+            #output = nets[snakes.index(snake)].activate(snakeout(snake))
             maxn = -10
             xnono = 0
 
@@ -161,7 +187,7 @@ def eval_genomes(genomes, config):
                 if output[int(_x)] > maxn:
                     maxn = output[int(_x)]
                     xnono = _x
-
+            
             if xnono == 0:
                 snake.change_direction("left")
             elif xnono == 1:
@@ -171,46 +197,55 @@ def eval_genomes(genomes, config):
             elif xnono == 3:
                 snake.change_direction("down")
             
-        for x, snake in enumerate(snakes):
+        for snake in snakes:
+            if (snake.lastdirection == "left" and snake.direction == "right") or (snake.lastdirection == "right" and snake.direction == "left") or (snake.lastdirection == "up" and snake.direction == "down") or (snake.lastdirection == "down" and snake.direction == "up"):
+                ge[snakes.index(snake)].fitness -= 1
+                nets.pop(snakes.index(snake))
+                ge.pop(snakes.index(snake))
+                snakes.pop(snakes.index(snake))
+                lastfive("same directior", snakes)
+        
+        for snake in snakes:
             if snake.sx == snake.fx and snake.sy == snake.fy:
                 snake.fx = randomx(snake.sx)
                 snake.fy = randomx(snake.sy)
                 snake.snake_length += 1
-                ge[x].fitness += 10
+                ge[snakes.index(snake)].fitness += 5
 
             for _x in snake.snake_list[:-1]:
                 if _x == [snake.sx,snake.sy]:
-                    ge[x].fitness -= 1
-                    snakes.pop(x)
-                    nets.pop(x)
-                    ge.pop(x)
-
-        if time - start_time > 15000//timefactor:
-            for x, snake in enumerate(snakes):
-                if snake.snake_length == 1:
-                    ge[x].fitness = -2
-                    snakes.pop(x)
-                    nets.pop(x)
-                    ge.pop(x)
-                elif snake.snake_length <= should_length:
-                    snakes.pop(x)
-                    nets.pop(x)
-                    ge.pop(x)
+                    ge[snakes.index(snake)].fitness -= 1
+                    nets.pop(snakes.index(snake))
+                    ge.pop(snakes.index(snake))
+                    snakes.pop(snakes.index(snake))
+                    lastfive("self coli", snakes)
+        if time - start_time > 20000//timefactor:
+            for snake in snakes:
+                if snake.snake_length <= should_length:
+                    nets.pop(snakes.index(snake))
+                    ge.pop(snakes.index(snake))
+                    snakes.pop(snakes.index(snake))
+                    lastfive("its length "+str(snake.snake_length) + " should length " +str(should_length), snakes)
             start_time = time
             should_length += 1
 
+        for snake in snakes:
+            if snake.snake_length-1 > best:
+                best = snake.snake_length-1
+
 
         if len(snakes) == 0:
+            print("")
             run = False
             break
 
-        draw_window(WIN, snakes)
+        draw_window(WIN, snakes, best, timefactor)
         clock.tick(snake_speed)
         
 def run(config_path):
     config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         config_path)
+                                neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                                config_path)
 
     p = neat.Population(config)
 
