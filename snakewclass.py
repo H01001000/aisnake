@@ -7,6 +7,7 @@ import pickle
 import numpy as np
 from PIL import Image
 import multiprocessing
+import re
 
 pygame.font.init()
 
@@ -122,10 +123,10 @@ def lastfive(printstr, snakes):
 
 def draw_window(win, snakes, best, score):
     win.fill((0,0,0))
-    for Snake in snakes:
-        pygame.draw.rect(WIN, (255, 255, 255),[Snake.fx,Snake.fy,snake_block,snake_block])
-        for x in range(len(Snake.snake_list)):
-            pygame.draw.rect(WIN, (128, 128, 128),[Snake.snake_list[x][0],Snake.snake_list[x][1],snake_block,snake_block])
+    for snake in snakes:
+        pygame.draw.rect(WIN, (255, 255, 255),[snake.fx,snake.fy,snake_block,snake_block])
+        for x in range(len(snake.snake_list)):
+            pygame.draw.rect(WIN, (128, 128, 128),[snake.snake_list[x][0],snake.snake_list[x][1],snake_block,snake_block])
 
     value = STAT_FONT.render("Best Score: " + str(best), True, (255, 255, 255))
     WIN.blit(value, [0, 0])
@@ -143,7 +144,6 @@ def eval_genomes(genomes, config):
     should_length = 1
 
     global WIN, gen, best, timefactor
-    win = WIN
     gen += 1
     score = 0
 
@@ -288,7 +288,6 @@ def eval_genome(genome, config):
     should_length = 1
 
     global WIN, gen, best, timefactor
-    win = WIN
     gen += 1
     score = 0
 
@@ -415,16 +414,47 @@ def eval_genome(genome, config):
         clock.tick(snake_speed)
 
 def run(config_path):
-    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                                neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                                config_path)
+    print("Enter the path to the dir with chatpoint or a name for new dir.")
+    print("You should NOT create you own dir for the checkpoint")
+    inputstr = str(input())
 
-    p = neat.Population(config)
+    list_of_dir = []
 
-    p.add_reporter(neat.StdOutReporter(True))
-    stats = neat.StatisticsReporter()
-    p.add_reporter(stats)
-    p.add_reporter(neat.Checkpointer(1,300, "checkpoint2/neat-checkpoint-"))
+    for (dirpath, dirnames, filenames) in os.walk(os.path.dirname(os.path.abspath(__file__))):
+        list_of_dir.extend(dirnames)
+        break
+    
+    if inputstr in list_of_dir:
+        list_of_files = []
+
+        for (dirpath, dirnames, filenames) in os.walk(os.path.join(os.path.dirname(os.path.abspath(__file__)), inputstr)):
+            list_of_files.extend(filenames)
+            break
+
+        def extract_number(list_of_files):
+            s = re.findall("\d+$",list_of_files)
+            return (int(s[0]) if s else -1,list_of_files)
+
+        p = neat.Checkpointer.restore_checkpoint(inputstr+"/"+max(list_of_files,key=extract_number))
+
+        p.add_reporter(neat.StdOutReporter(True))
+        stats = neat.StatisticsReporter()
+        p.add_reporter(stats)
+        p.add_reporter(neat.Checkpointer(1,300, inputstr+"/neat-checkpoint-"))
+    else:
+        os.makedirs(inputstr)
+
+        config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                                    neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                                    config_path)
+
+        p = neat.Population(config)
+
+
+        p.add_reporter(neat.StdOutReporter(True))
+        stats = neat.StatisticsReporter()
+        p.add_reporter(stats)
+        p.add_reporter(neat.Checkpointer(1,300, inputstr+"/neat-checkpoint-"))
 
     #pe = neat.ParallelEvaluator(multiprocessing.cpu_count(), eval_genome)
     #winner = p.run(pe.evaluate)
